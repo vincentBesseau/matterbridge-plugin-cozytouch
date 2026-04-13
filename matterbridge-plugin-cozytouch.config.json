@@ -1,0 +1,12 @@
+{
+  "name": "matterbridge-plugin-cozytouch",
+  "type": "DynamicPlatform",
+  "service": "cozytouch",
+  "user": "",
+  "password": "",
+  "pollingInterval": 60,
+  "whiteList": [],
+  "blackList": [],
+  "debug": false,
+  "unregisterOnShutdown": false
+}

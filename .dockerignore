@@ -1,0 +1,9 @@
+node_modules
+.cache
+coverage
+jest
+temp
+.git
+.gitignore
+*.tsbuildinfo
+

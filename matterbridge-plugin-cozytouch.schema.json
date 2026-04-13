@@ -1,6 +1,6 @@
 {
-  "title": "Matterbridge test plugin",
-  "description": "matterbridge-test v. 1.0.0 by https://github.com/Luligu",
+  "title": "Matterbridge Cozytouch Plugin",
+  "description": "matterbridge-plugin-cozytouch v. 0.1.0",
   "type": "object",
   "properties": {
     "name": {
@@ -16,6 +16,33 @@
       "type": "string",
       "readOnly": true,
       "ui:widget": "hidden"
+    },
+    "service": {
+      "title": "Service",
+      "description": "The Overkiz service to connect to. Use 'cozytouch' for Atlantic/Thermor/Sauter Cozytouch.",
+      "type": "string",
+      "default": "cozytouch",
+      "enum": ["cozytouch", "tahoma", "connexoon", "somfy_europe", "somfy_australia", "somfy_north_america", "rexel", "hi_kumo", "flexom", "local"],
+      "ui:widget": "select"
+    },
+    "user": {
+      "title": "Username / Email",
+      "description": "Your Cozytouch account email address.",
+      "type": "string"
+    },
+    "password": {
+      "title": "Password",
+      "description": "Your Cozytouch account password.",
+      "type": "string",
+      "ui:widget": "password"
+    },
+    "pollingInterval": {
+      "title": "Polling Interval (seconds)",
+      "description": "How often to poll for device state updates (in seconds). Minimum 30 for cloud services.",
+      "type": "number",
+      "default": 60,
+      "minimum": 10,
+      "maximum": 300
     },
     "whiteList": {
       "title": "White List",
@@ -49,5 +76,6 @@
       "type": "boolean",
       "default": false
     }
-  }
+  },
+  "required": ["user", "password"]
 }

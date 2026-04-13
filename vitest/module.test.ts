@@ -4,7 +4,7 @@ import { MatterbridgeEndpoint, PlatformConfig, PlatformMatterbridge } from 'matt
 import { AnsiLogger, LogLevel } from 'matterbridge/logger';
 import { VendorId } from 'matterbridge/matter';
 
-import { TemplatePlatform } from '../src/module.js';
+import { CozytouchPlatform } from '../src/module.js';
 
 const mockLog = {
   fatal: vi.fn((message: string, ...parameters: any[]) => {}),
@@ -22,12 +22,12 @@ const mockMatterbridge: PlatformMatterbridge = {
     osRelease: 'x.y.z',
     nodeVersion: '22.10.0',
   },
-  rootDirectory: path.join('.cache', 'vitest', 'TemplatePlugin'),
-  homeDirectory: path.join('.cache', 'vitest', 'TemplatePlugin'),
-  matterbridgeDirectory: path.join('.cache', 'vitest', 'TemplatePlugin', '.matterbridge'),
-  matterbridgePluginDirectory: path.join('.cache', 'vitest', 'TemplatePlugin', 'Matterbridge'),
-  matterbridgeCertDirectory: path.join('.cache', 'vitest', 'TemplatePlugin', '.mattercert'),
-  globalModulesDirectory: path.join('.cache', 'vitest', 'TemplatePlugin', 'node_modules'),
+  rootDirectory: path.join('.cache', 'vitest', 'CozytouchPlugin'),
+  homeDirectory: path.join('.cache', 'vitest', 'CozytouchPlugin'),
+  matterbridgeDirectory: path.join('.cache', 'vitest', 'CozytouchPlugin', '.matterbridge'),
+  matterbridgePluginDirectory: path.join('.cache', 'vitest', 'CozytouchPlugin', 'Matterbridge'),
+  matterbridgeCertDirectory: path.join('.cache', 'vitest', 'CozytouchPlugin', '.mattercert'),
+  globalModulesDirectory: path.join('.cache', 'vitest', 'CozytouchPlugin', 'node_modules'),
   matterbridgeVersion: '3.5.0',
   matterbridgeLatestVersion: '3.5.0',
   matterbridgeDevVersion: '3.5.0',
@@ -45,19 +45,23 @@ const mockMatterbridge: PlatformMatterbridge = {
 } as unknown as PlatformMatterbridge;
 
 const mockConfig: PlatformConfig = {
-  name: 'matterbridge-plugin-template',
+  name: 'matterbridge-plugin-cozytouch',
   type: 'DynamicPlatform',
-  version: '1.0.0',
+  version: '0.1.0',
   whiteList: [],
   blackList: [],
   debug: false,
   unregisterOnShutdown: false,
+  service: 'cozytouch',
+  user: '',
+  password: '',
+  pollingInterval: 60,
 };
 
 const loggerLogSpy = vi.spyOn(AnsiLogger.prototype, 'log').mockImplementation((level: string, message: string, ...parameters: any[]) => {});
 
-describe('Matterbridge Plugin Template', () => {
-  let instance: TemplatePlatform;
+describe('Matterbridge Plugin Cozytouch', () => {
+  let instance: CozytouchPlatform;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -69,16 +73,16 @@ describe('Matterbridge Plugin Template', () => {
 
   it('should throw an error if matterbridge is not the required version', async () => {
     // @ts-expect-error Ignore readonly for testing purposes
-    mockMatterbridge.matterbridgeVersion = '2.0.0'; // Simulate an older version
-    expect(() => new TemplatePlatform(mockMatterbridge, mockLog, mockConfig)).toThrow(
+    mockMatterbridge.matterbridgeVersion = '2.0.0';
+    expect(() => new CozytouchPlatform(mockMatterbridge, mockLog, mockConfig)).toThrow(
       'This plugin requires Matterbridge version >= "3.4.0". Please update Matterbridge from 2.0.0 to the latest version in the frontend.',
     );
     // @ts-expect-error Ignore readonly for testing purposes
-    mockMatterbridge.matterbridgeVersion = '3.4.0';
+    mockMatterbridge.matterbridgeVersion = '3.5.0';
   });
 
   it('should create an instance of the platform', async () => {
-    instance = (await import('../src/module.js')).default(mockMatterbridge, mockLog, mockConfig) as TemplatePlatform;
+    instance = (await import('../src/module.js')).default(mockMatterbridge, mockLog, mockConfig) as CozytouchPlatform;
     // @ts-expect-error Accessing private method for testing purposes
     instance.setMatterNode(
       // @ts-expect-error Accessing private method for testing purposes
@@ -90,45 +94,22 @@ describe('Matterbridge Plugin Template', () => {
       // @ts-expect-error Accessing private method for testing purposes
       mockMatterbridge.registerVirtualDevice,
     );
-    expect(instance).toBeInstanceOf(TemplatePlatform);
+    expect(instance).toBeInstanceOf(CozytouchPlatform);
     expect(instance.matterbridge).toBe(mockMatterbridge);
     expect(instance.log).toBe(mockLog);
     expect(instance.config).toBe(mockConfig);
-    expect(instance.matterbridge.matterbridgeVersion).toBe('3.4.0');
-    expect(mockLog.info).toHaveBeenCalledWith('Initializing Platform...');
+    expect(mockLog.info).toHaveBeenCalledWith('Initializing Cozytouch Platform...');
   });
 
-  it('should start with node devices selected', async () => {
-    mockConfig.whiteList = ['No devices'];
-    await instance.onStart('Jest');
-    expect(mockLog.info).toHaveBeenCalledWith('onStart called with reason: Jest');
-    await instance.onStart();
-    expect(mockLog.info).toHaveBeenCalledWith('onStart called with reason: none');
-  });
-
-  it('should start', async () => {
-    mockConfig.whiteList = [];
-    await instance.onStart('Jest');
-    expect(mockLog.info).toHaveBeenCalledWith('onStart called with reason: Jest');
-    await instance.onStart();
-    expect(mockLog.info).toHaveBeenCalledWith('onStart called with reason: none');
-  });
-
-  it('should call the command handlers', async () => {
-    for (const device of instance.getDevices()) {
-      if (device.hasClusterServer('onOff')) {
-        await device.executeCommandHandler('on', {}, 'onOff', {} as any, device);
-        await device.executeCommandHandler('off', {}, 'onOff', {} as any, device);
-      }
-    }
-    expect(mockLog.info).toHaveBeenCalledWith('Command on called on cluster onOff');
-    expect(mockLog.info).toHaveBeenCalledWith('Command off called on cluster onOff');
+  it('should start and log missing credentials', async () => {
+    await instance.onStart('Vitest');
+    expect(mockLog.info).toHaveBeenCalledWith('onStart called with reason: Vitest');
+    expect(mockLog.error).toHaveBeenCalledWith('Missing Cozytouch credentials. Please configure user and password in the plugin settings.');
   });
 
   it('should configure', async () => {
     await instance.onConfigure();
     expect(mockLog.info).toHaveBeenCalledWith('onConfigure called');
-    expect(mockLog.info).toHaveBeenCalledWith(expect.stringContaining('Configuring device:'));
   });
 
   it('should change logger level', async () => {
@@ -137,10 +118,9 @@ describe('Matterbridge Plugin Template', () => {
   });
 
   it('should shutdown', async () => {
-    await instance.onShutdown('Jest');
-    expect(mockLog.info).toHaveBeenCalledWith('onShutdown called with reason: Jest');
+    await instance.onShutdown('Vitest');
+    expect(mockLog.info).toHaveBeenCalledWith('onShutdown called with reason: Vitest');
 
-    // Mock the unregisterOnShutdown behavior
     mockConfig.unregisterOnShutdown = true;
     await instance.onShutdown();
     expect(mockLog.info).toHaveBeenCalledWith('onShutdown called with reason: none');

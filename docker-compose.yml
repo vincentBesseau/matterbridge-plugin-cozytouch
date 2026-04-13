@@ -1,0 +1,51 @@
+###############################################################################
+# Matterbridge + plugin Cozytouch
+#
+# Start :  docker compose up -d
+# Logs  :  docker compose logs -f
+# Stop  :  docker compose down
+# Shell :  docker compose exec matterbridge sh
+###############################################################################
+
+services:
+  matterbridge:
+    image: luligu/matterbridge:latest
+    container_name: matterbridge-cozytouch
+    restart: unless-stopped
+
+    # Sur macOS, network_mode: host ne fonctionne pas.
+    # On mappe les ports nécessaires à la place.
+    ports:
+      - '8283:8283' # Frontend web Matterbridge
+      - '5540:5540' # Matter commissioning (TCP+UDP)
+      - '5540:5540/udp'
+
+    volumes:
+      # Données persistantes Matterbridge (config, state, certs)
+      - matterbridge-config:/root/.matterbridge
+      - matterbridge-certs:/root/.mattercert
+
+      # Monte le plugin local (code source buildé) dans le container
+      - ./dist:/root/Matterbridge/matterbridge-plugin-cozytouch/dist:ro
+      - ./package.json:/root/Matterbridge/matterbridge-plugin-cozytouch/package.json:ro
+      - ./matterbridge-plugin-cozytouch.config.json:/root/Matterbridge/matterbridge-plugin-cozytouch/matterbridge-plugin-cozytouch.config.json
+      - ./matterbridge-plugin-cozytouch.schema.json:/root/Matterbridge/matterbridge-plugin-cozytouch/matterbridge-plugin-cozytouch.schema.json:ro
+
+      # Le node_modules du container est dans un volume séparé
+      - plugin-node-modules:/root/Matterbridge/matterbridge-plugin-cozytouch/node_modules
+
+    environment:
+      - TZ=Europe/Paris
+
+    # Health check intégré à l'image
+    healthcheck:
+      test: ['CMD', 'mb_health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  matterbridge-config:
+  matterbridge-certs:
+  plugin-node-modules:
