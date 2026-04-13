@@ -51,7 +51,7 @@ const DHW_MODE_VALUES = {
  *
  * @param device
  */
-function isBoostOn(device: OverkizDeviceInfo): boolean {
+export function isBoostOn(device: OverkizDeviceInfo): boolean {
   // Modbuslink on/off state (Atlantic LINEO and similar)
   if (device.hasState(DHW_STATES.BOOST_MODE_MODBUSLINK)) {
     return device.get(DHW_STATES.BOOST_MODE_MODBUSLINK) === 'on';
@@ -75,7 +75,7 @@ function isBoostOn(device: OverkizDeviceInfo): boolean {
  *
  * @param device
  */
-function isAwayOn(device: OverkizDeviceInfo): boolean {
+export function isAwayOn(device: OverkizDeviceInfo): boolean {
   // Modbuslink on/off state (Atlantic LINEO and similar)
   if (device.hasState(DHW_STATES.AWAY_MODE_MODBUSLINK)) {
     return device.get(DHW_STATES.AWAY_MODE_MODBUSLINK) === 'on';
@@ -99,7 +99,7 @@ function isAwayOn(device: OverkizDeviceInfo): boolean {
  *
  * @param device
  */
-function isDhwAutoMode(device: OverkizDeviceInfo): boolean {
+export function isDhwAutoMode(device: OverkizDeviceInfo): boolean {
   if (device.hasState(DHW_STATES.DHW_MODE_MODBUSLINK)) {
     return device.get(DHW_STATES.DHW_MODE_MODBUSLINK) === DHW_MODE_VALUES.AUTO_MODE;
   }
@@ -182,3 +182,27 @@ export const WATER_HEATER_SWITCHES: WaterHeaterSwitch[] = [
     isAvailable: (device) => device.hasCommand('setDHWMode') || device.hasState(DHW_STATES.DHW_MODE) || device.hasState(DHW_STATES.DHW_MODE_ALT),
   },
 ];
+
+/**
+ * Availability checkers — reusable predicates for each feature.
+ */
+export const BOOST_AVAILABLE = (device: OverkizDeviceInfo): boolean =>
+  device.hasCommand('setBoostMode') ||
+  device.hasCommand('setBoostModeDuration') ||
+  device.hasCommand('setBoostOnOffState') ||
+  device.hasState(DHW_STATES.BOOST_MODE_MODBUSLINK) ||
+  device.hasState(DHW_STATES.BOOST_MODE_DURATION) ||
+  device.hasState(DHW_STATES.BOOST_MODE_DURATION_ALT) ||
+  device.hasState(DHW_STATES.BOOST_ON_OFF);
+
+export const AWAY_AVAILABLE = (device: OverkizDeviceInfo): boolean =>
+  device.hasCommand('setAbsenceMode') ||
+  device.hasCommand('setAbsenceModeDuration') ||
+  device.hasState(DHW_STATES.AWAY_MODE_MODBUSLINK) ||
+  device.hasState(DHW_STATES.AWAY_MODE) ||
+  device.hasState(DHW_STATES.AWAY_MODE_DURATION) ||
+  device.hasState(DHW_STATES.AWAY_ON_OFF);
+
+export const DHW_MODE_AVAILABLE = (device: OverkizDeviceInfo): boolean =>
+  device.hasCommand('setDHWMode') || device.hasState(DHW_STATES.DHW_MODE) || device.hasState(DHW_STATES.DHW_MODE_ALT);
+

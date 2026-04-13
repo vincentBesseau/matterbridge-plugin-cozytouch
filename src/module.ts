@@ -14,7 +14,6 @@ import { MatterbridgeDynamicPlatform, MatterbridgeEndpoint, PlatformConfig, Plat
 import { AnsiLogger, LogLevel } from 'matterbridge/logger';
 import { Client as OverkizClient, Device as OverkizDevice } from 'overkiz-client';
 
-import type { WaterHeaterChildSwitch } from './devices/index.js';
 import {
   createCoverEndpoint,
   createSwitchEndpoint,
@@ -24,6 +23,7 @@ import {
   IGNORED_UI_CLASSES,
   MatterDeviceType,
   resolveDeviceType,
+  SYSTEM_MODE,
   updateCoverEndpoint,
   updateSwitchEndpoint,
   updateTemperatureSensorEndpoint,
@@ -31,7 +31,6 @@ import {
   updateWaterHeaterEndpoint,
 } from './devices/index.js';
 import type { OverkizDeviceInfo } from './devices/types.js';
-import type { WaterHeaterSwitch } from './devices/waterHeaterSwitchesDevice.js';
 import { toDeviceInfo } from './overkizDeviceAdapter.js';
 
 /**
@@ -52,8 +51,12 @@ interface TrackedDevice {
   endpoint: MatterbridgeEndpoint;
   deviceType: MatterDeviceType;
   overkizDevice: OverkizDevice;
-  /** Child switch endpoints embedded in the composed water heater device. */
-  childSwitches?: WaterHeaterChildSwitch[];
+  /** Whether the water heater supports boost mode. */
+  hasBoost?: boolean;
+  /** Whether the water heater supports absence mode. */
+  hasAway?: boolean;
+  /** Whether the water heater supports DHW auto/manual mode. */
+  hasDhwMode?: boolean;
 }
 
 /**
@@ -146,8 +149,8 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
           const freshInfo = toDeviceInfo(tracked.overkizDevice);
 
           if (tracked.deviceType === MatterDeviceType.WaterHeater) {
-            // Water heater: update thermostat + child switches in one call
-            await updateWaterHeaterEndpoint(tracked.endpoint, tracked.childSwitches ?? [], freshInfo, this.log);
+            // Water heater: update thermostat + systemMode in one call
+            await updateWaterHeaterEndpoint(tracked.endpoint, freshInfo, this.log);
           } else {
             await this.updateEndpoint(tracked.endpoint, freshInfo, tracked.deviceType);
           }
@@ -279,20 +282,22 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
       return;
     }
 
-    // Water heater uses a composed device (thermostat + child switches)
+    // Water heater: single thermostat endpoint with systemMode mapping
     if (deviceType === MatterDeviceType.WaterHeater) {
-      const composed = createWaterHeaterEndpoint(deviceInfo, vendorId, this.log);
-      await this.registerDevice(composed.endpoint);
+      const result = createWaterHeaterEndpoint(deviceInfo, vendorId, this.log);
+      await this.registerDevice(result.endpoint);
 
       this.trackedDevices.set(device.deviceURL, {
         deviceInfo,
-        endpoint: composed.endpoint,
+        endpoint: result.endpoint,
         deviceType,
         overkizDevice: device,
-        childSwitches: composed.childSwitches,
+        hasBoost: result.hasBoost,
+        hasAway: result.hasAway,
+        hasDhwMode: result.hasDhwMode,
       });
 
-      this.log.info(`Registered device "${device.label}" as ${deviceType} (widget: ${widgetName}) with ${composed.childSwitches.length} child switch(es)`);
+      this.log.info(`Registered device "${device.label}" as ${deviceType} (widget: ${widgetName}) — boost=${result.hasBoost} away=${result.hasAway} dhw=${result.hasDhwMode}`);
       return;
     }
 
@@ -370,19 +375,16 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
     for (const [, tracked] of this.trackedDevices) {
       const { endpoint, deviceType, overkizDevice, deviceInfo } = tracked;
 
-      if (deviceType === MatterDeviceType.Thermostat || deviceType === MatterDeviceType.WaterHeater) {
+      if (deviceType === MatterDeviceType.WaterHeater) {
+        // Water heater: thermostat setpoint + systemMode → boost / absence / auto
+        this.setupThermostatCommandHandlers(endpoint, overkizDevice, deviceInfo);
+        this.setupWaterHeaterSystemModeHandler(endpoint, overkizDevice, deviceInfo, tracked);
+      } else if (deviceType === MatterDeviceType.Thermostat) {
         this.setupThermostatCommandHandlers(endpoint, overkizDevice, deviceInfo);
       } else if (deviceType === MatterDeviceType.Cover) {
         this.setupCoverCommandHandlers(endpoint, overkizDevice, deviceInfo);
       } else if (deviceType === MatterDeviceType.Switch) {
         this.setupSwitchCommandHandlers(endpoint, overkizDevice, deviceInfo);
-      }
-
-      // Set up command handlers for auxiliary water heater switches
-      if (tracked.childSwitches) {
-        for (const { endpoint: switchEp, switchDef } of tracked.childSwitches) {
-          this.setupWaterHeaterSwitchCommandHandlers(switchEp, overkizDevice, deviceInfo, switchDef);
-        }
       }
     }
   }
@@ -454,22 +456,68 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
   }
 
   /**
-   * Set up command handlers for a water heater auxiliary switch (boost, away, dhw mode).
+   * Set up systemMode handler for a water heater endpoint.
+   *
+   * Maps Matter thermostat systemMode to Overkiz commands:
+   *   Off (0)            → setAbsenceMode('on')
+   *   Heat (4)           → setAbsenceMode('off') + setBoostMode('off') + setDHWMode('autoMode')
+   *   EmergencyHeat (5)  → setBoostMode('on')
    *
    * @param endpoint
    * @param device
    * @param info
-   * @param switchDef
+   * @param tracked
    */
-  private setupWaterHeaterSwitchCommandHandlers(endpoint: MatterbridgeEndpoint, device: OverkizDevice, info: OverkizDeviceInfo, switchDef: WaterHeaterSwitch) {
-    endpoint.addCommandHandler('on', async () => {
-      this.log.info(`On command on "${info.label}${switchDef.labelSuffix}": ${switchDef.onCommand}(${JSON.stringify(switchDef.onParams)})`);
-      await this.executeOverkizCommand(device, switchDef.onCommand, ...switchDef.onParams);
-    });
+  private setupWaterHeaterSystemModeHandler(
+    endpoint: MatterbridgeEndpoint,
+    device: OverkizDevice,
+    info: OverkizDeviceInfo,
+    tracked: TrackedDevice,
+  ) {
 
-    endpoint.addCommandHandler('off', async () => {
-      this.log.info(`Off command on "${info.label}${switchDef.labelSuffix}": ${switchDef.offCommand}(${JSON.stringify(switchDef.offParams)})`);
-      await this.executeOverkizCommand(device, switchDef.offCommand, ...switchDef.offParams);
+    // Subscribe to systemMode attribute writes
+    endpoint.subscribeAttribute('thermostat', 'systemMode', async (newValue: number) => {
+      this.log.info(`Water heater "${info.label}" systemMode changed to ${newValue}`);
+
+      try {
+        switch (newValue) {
+          case SYSTEM_MODE.EMERGENCY_HEAT:
+            // Boost mode ON
+            if (tracked.hasBoost) {
+              await this.executeOverkizCommand(device, 'setBoostMode', 'on');
+              this.log.info(`  → Boost ON for "${info.label}"`);
+            }
+            break;
+
+          case SYSTEM_MODE.OFF:
+            // Absence mode ON (and disable boost if active)
+            if (tracked.hasBoost) {
+              await this.executeOverkizCommand(device, 'setBoostMode', 'off');
+            }
+            if (tracked.hasAway) {
+              await this.executeOverkizCommand(device, 'setAbsenceMode', 'on');
+              this.log.info(`  → Absence ON for "${info.label}"`);
+            }
+            break;
+
+          case SYSTEM_MODE.HEAT:
+          default:
+            // Normal / Auto mode: disable boost and absence
+            if (tracked.hasBoost) {
+              await this.executeOverkizCommand(device, 'setBoostMode', 'off');
+            }
+            if (tracked.hasAway) {
+              await this.executeOverkizCommand(device, 'setAbsenceMode', 'off');
+            }
+            if (tracked.hasDhwMode) {
+              await this.executeOverkizCommand(device, 'setDHWMode', 'autoMode');
+            }
+            this.log.info(`  → Normal/Auto mode for "${info.label}"`);
+            break;
+        }
+      } catch (error) {
+        this.log.error(`Failed to handle systemMode change for "${info.label}": ${error instanceof Error ? error.message : String(error)}`);
+      }
     });
   }
 

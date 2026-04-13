@@ -5,7 +5,8 @@
  */
 
 import type { OverkizDeviceInfo } from '../src/devices/types.js';
-import { WATER_HEATER_SWITCHES } from '../src/devices/waterHeaterSwitchesDevice.js';
+import { WATER_HEATER_SWITCHES, isBoostOn, isAwayOn, isDhwAutoMode, BOOST_AVAILABLE, AWAY_AVAILABLE, DHW_MODE_AVAILABLE } from '../src/devices/waterHeaterSwitchesDevice.js';
+import { resolveSystemMode, SYSTEM_MODE } from '../src/devices/waterHeaterModes.js';
 
 /**
  * Helper: create a mock OverkizDeviceInfo with optional states and commands.
@@ -282,3 +283,122 @@ describe('WATER_HEATER_SWITCHES', () => {
     });
   });
 });
+
+describe('Exported helper functions', () => {
+  describe('isBoostOn', () => {
+    it('should return true when modbuslink boost state is "on"', () => {
+      const device = mockDevice({ states: { 'modbuslink:DHWBoostModeState': 'on' } });
+      expect(isBoostOn(device)).toBe(true);
+    });
+
+    it('should return false when no boost state exists', () => {
+      const device = mockDevice();
+      expect(isBoostOn(device)).toBe(false);
+    });
+  });
+
+  describe('isAwayOn', () => {
+    it('should return true when absence on/off is "on"', () => {
+      const device = mockDevice({ states: { 'io:AbsenceOnOffState': 'on' } });
+      expect(isAwayOn(device)).toBe(true);
+    });
+
+    it('should return false when no absence state exists', () => {
+      const device = mockDevice();
+      expect(isAwayOn(device)).toBe(false);
+    });
+  });
+
+  describe('isDhwAutoMode', () => {
+    it('should return true when DHW mode is autoMode', () => {
+      const device = mockDevice({ states: { 'io:DHWModeState': 'autoMode' } });
+      expect(isDhwAutoMode(device)).toBe(true);
+    });
+
+    it('should default to true when no DHW state exists', () => {
+      const device = mockDevice();
+      expect(isDhwAutoMode(device)).toBe(true);
+    });
+  });
+});
+
+describe('Availability checkers', () => {
+  it('BOOST_AVAILABLE should return true when setBoostMode exists', () => {
+    const device = mockDevice({ commands: ['setBoostMode'] });
+    expect(BOOST_AVAILABLE(device)).toBe(true);
+  });
+
+  it('BOOST_AVAILABLE should return false when no boost feature', () => {
+    const device = mockDevice();
+    expect(BOOST_AVAILABLE(device)).toBe(false);
+  });
+
+  it('AWAY_AVAILABLE should return true when setAbsenceMode exists', () => {
+    const device = mockDevice({ commands: ['setAbsenceMode'] });
+    expect(AWAY_AVAILABLE(device)).toBe(true);
+  });
+
+  it('AWAY_AVAILABLE should return false when no away feature', () => {
+    const device = mockDevice();
+    expect(AWAY_AVAILABLE(device)).toBe(false);
+  });
+
+  it('DHW_MODE_AVAILABLE should return true when setDHWMode exists', () => {
+    const device = mockDevice({ commands: ['setDHWMode'] });
+    expect(DHW_MODE_AVAILABLE(device)).toBe(true);
+  });
+
+  it('DHW_MODE_AVAILABLE should return false when no DHW mode feature', () => {
+    const device = mockDevice();
+    expect(DHW_MODE_AVAILABLE(device)).toBe(false);
+  });
+});
+
+describe('resolveSystemMode', () => {
+  it('should return EMERGENCY_HEAT when boost is active', () => {
+    const device = mockDevice({
+      commands: ['setBoostMode', 'setAbsenceMode'],
+      states: { 'modbuslink:DHWBoostModeState': 'on' },
+    });
+    expect(resolveSystemMode(device)).toBe(SYSTEM_MODE.EMERGENCY_HEAT);
+  });
+
+  it('should return OFF when absence is active (and no boost)', () => {
+    const device = mockDevice({
+      commands: ['setBoostMode', 'setAbsenceMode'],
+      states: {
+        'modbuslink:DHWBoostModeState': 'off',
+        'io:AbsenceOnOffState': 'on',
+      },
+    });
+    expect(resolveSystemMode(device)).toBe(SYSTEM_MODE.OFF);
+  });
+
+  it('should return HEAT when neither boost nor absence is active', () => {
+    const device = mockDevice({
+      commands: ['setBoostMode', 'setAbsenceMode'],
+      states: {
+        'modbuslink:DHWBoostModeState': 'off',
+        'io:AbsenceOnOffState': 'off',
+      },
+    });
+    expect(resolveSystemMode(device)).toBe(SYSTEM_MODE.HEAT);
+  });
+
+  it('should return HEAT when no features are available', () => {
+    const device = mockDevice();
+    expect(resolveSystemMode(device)).toBe(SYSTEM_MODE.HEAT);
+  });
+
+  it('should prioritize boost over absence when both active', () => {
+    const device = mockDevice({
+      commands: ['setBoostMode', 'setAbsenceMode'],
+      states: {
+        'modbuslink:DHWBoostModeState': 'on',
+        'io:AbsenceOnOffState': 'on',
+      },
+    });
+    expect(resolveSystemMode(device)).toBe(SYSTEM_MODE.EMERGENCY_HEAT);
+  });
+});
+

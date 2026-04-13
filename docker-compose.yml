@@ -37,6 +37,15 @@ services:
     environment:
       - TZ=Europe/Paris
 
+    # Installe les deps du plugin et lie matterbridge avant de démarrer
+    entrypoint: >
+      sh -c '
+        cd /root/Matterbridge/matterbridge-plugin-cozytouch &&
+        npm install --omit=dev 2>/dev/null;
+        ln -sf /usr/local/lib/node_modules/matterbridge node_modules/matterbridge 2>/dev/null;
+        exec /matterbridge/entrypoint.latest.sh matterbridge -docker
+      '
+
     # Health check intégré à l'image
     healthcheck:
       test: ['CMD', 'mb_health']

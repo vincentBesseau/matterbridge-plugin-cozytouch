@@ -11,5 +11,5 @@ export { createSwitchEndpoint, updateSwitchEndpoint } from './switchDevice.js';
 export { createTemperatureSensorEndpoint, updateTemperatureSensorEndpoint } from './temperatureSensorDevice.js';
 export { createThermostatEndpoint, updateThermostatEndpoint } from './thermostatDevice.js';
 export type { OverkizDeviceInfo } from './types.js';
-export type { WaterHeaterChildSwitch, WaterHeaterComposedDevice } from './waterHeaterDevice.js';
-export { createWaterHeaterEndpoint, updateWaterHeaterEndpoint } from './waterHeaterDevice.js';
+export type { WaterHeaterResult } from './waterHeaterDevice.js';
+export { createWaterHeaterEndpoint, updateWaterHeaterEndpoint, SYSTEM_MODE } from './waterHeaterDevice.js';
