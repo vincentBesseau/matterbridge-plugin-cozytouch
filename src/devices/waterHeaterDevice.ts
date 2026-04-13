@@ -1,50 +1,51 @@
 /**
  * Water heater device creator for Overkiz DHW devices.
  *
- * Creates a **single** thermostat endpoint that exposes:
- * - Temperature measurement (current water temperature)
- * - Heating setpoint (target temperature)
- * - systemMode mapping:
- *     Off (0)            → Absence mode
- *     Heat (4)           → Normal / Auto DHW mode
- *     EmergencyHeat (5)  → Boost mode
+ * Creates a composed device that exposes:
+ * - Thermostat cluster: water temperature + target setpoint + temperatureMeasurement
+ * - Child OnOff endpoints: Boost, Absence, DHW Mode (Auto/Manuel)
  *
- * This ensures controllers like Gladys see exactly **one** device
- * with all water heater controls grouped together.
+ * Gladys sees this as a single device with multiple features.
  *
  * @file src/devices/waterHeaterDevice.ts
  * @license Apache-2.0
  */
 
-import { MatterbridgeEndpoint, thermostatDevice } from 'matterbridge';
+import { MatterbridgeEndpoint, onOffOutlet, thermostatDevice } from 'matterbridge';
 import { AnsiLogger } from 'matterbridge/logger';
 
 import type { OverkizDeviceInfo } from './types.js';
-import { BOOST_AVAILABLE, AWAY_AVAILABLE, DHW_MODE_AVAILABLE } from './waterHeaterSwitchesDevice.js';
-import { resolveSystemMode, SYSTEM_MODE } from './waterHeaterModes.js';
+import { WATER_HEATER_SWITCHES, type WaterHeaterSwitch } from './waterHeaterSwitchesDevice.js';
 
 // Re-export for consumers
 export { resolveSystemMode, SYSTEM_MODE } from './waterHeaterModes.js';
 
 /**
- * Result of creating a water heater endpoint.
+ * Metadata about a child switch endpoint created inside the composed device.
  */
-export interface WaterHeaterResult {
-  /** The single Matter endpoint. */
+export interface WaterHeaterChildSwitch {
+  /** The child MatterbridgeEndpoint. */
   endpoint: MatterbridgeEndpoint;
-  /** Whether boost mode is supported. */
-  hasBoost: boolean;
-  /** Whether absence mode is supported. */
-  hasAway: boolean;
-  /** Whether DHW auto/manual toggle is supported. */
-  hasDhwMode: boolean;
+  /** The switch definition (commands, state reader). */
+  switchDef: WaterHeaterSwitch;
 }
 
 /**
- * Create a single Matterbridge thermostat endpoint for an Overkiz water heater.
+ * Result of creating a water heater composed device.
+ */
+export interface WaterHeaterResult {
+  /** The root composed endpoint (thermostat). */
+  endpoint: MatterbridgeEndpoint;
+  /** Child switch endpoints embedded inside the composed device. */
+  childSwitches: WaterHeaterChildSwitch[];
+}
+
+/**
+ * Create a composed Matterbridge water heater endpoint from an Overkiz device.
  *
- * Note: createDefaultHeatingThermostatClusterServer expects temperature in °C
- * (it multiplies by 100 internally for Matter hundredths-of-°C).
+ * The root endpoint is a thermostat (temperature + setpoint + temperatureMeasurement).
+ * Child endpoints are OnOff switches for Boost, Absence, and DHW Mode,
+ * created only when the device supports them.
  *
  * @param device
  * @param vendorId
@@ -61,14 +62,8 @@ export function createWaterHeaterEndpoint(device: OverkizDeviceInfo, vendorId: n
   const currentTemp = rawTemp !== 0 ? rawTemp : 40;
   const targetTemp = rawTarget !== 0 ? rawTarget : 50;
 
-  const hasBoost = BOOST_AVAILABLE(device);
-  const hasAway = AWAY_AVAILABLE(device);
-  const hasDhwMode = DHW_MODE_AVAILABLE(device);
-  const systemMode = resolveSystemMode(device);
-
   log.info(`Water heater "${device.label}" raw values: temp=${rawTemp}, middleTemp=${rawMiddleTemp}, target=${rawTarget}, showers=${expectedShowers}`);
-  log.info(`Water heater "${device.label}" using: currentTemp=${currentTemp}°C, targetTemp=${targetTemp}°C, systemMode=${systemMode}`);
-  log.info(`Water heater "${device.label}" features: boost=${hasBoost}, away=${hasAway}, dhwMode=${hasDhwMode}`);
+  log.info(`Water heater "${device.label}" using: currentTemp=${currentTemp}°C, targetTemp=${targetTemp}°C`);
 
   const endpoint = new MatterbridgeEndpoint(thermostatDevice, { id: device.uuid })
     .createDefaultBridgedDeviceBasicInformationClusterServer(device.label, device.serialNumber, vendorId, device.manufacturer, `${device.model} (DHW)`)
@@ -79,22 +74,50 @@ export function createWaterHeaterEndpoint(device: OverkizDeviceInfo, vendorId: n
       30, // min 30°C
       70, // max 70°C
     )
+    // Add temperatureMeasurement cluster so controllers can read current water temp
+    .createDefaultTemperatureMeasurementClusterServer(
+      Math.round(currentTemp * 100), // hundredths of °C
+      30 * 100, // min
+      70 * 100, // max
+    )
     .addRequiredClusterServers();
 
-  log.info(`Created single water heater endpoint for "${device.label}" (${device.widgetName}) — systemMode=${systemMode}`);
+  // Create child switch endpoints for available features (boost, absence, dhw mode)
+  const childSwitches: WaterHeaterChildSwitch[] = [];
 
-  return { endpoint, hasBoost, hasAway, hasDhwMode };
+  for (const switchDef of WATER_HEATER_SWITCHES) {
+    if (!switchDef.isAvailable(device)) {
+      log.debug(`Water heater child switch "${switchDef.labelSuffix}" not available for "${device.label}"`);
+      continue;
+    }
+
+    const isOn = switchDef.isOn(device);
+    const childName = switchDef.idSuffix.replace('-', '');
+    const child = endpoint.addChildDeviceType(childName, onOffOutlet, { id: device.uuid + switchDef.idSuffix });
+    child.createDefaultOnOffClusterServer(isOn);
+    child.addRequiredClusterServers();
+
+    log.info(`  ↳ Child switch "${device.label}${switchDef.labelSuffix}" (${switchDef.idSuffix}) isOn=${isOn}`);
+    childSwitches.push({ endpoint: child, switchDef });
+  }
+
+  log.info(`Created water heater endpoint for "${device.label}" (${device.widgetName}) with ${childSwitches.length} child switch(es)`);
+
+  return { endpoint, childSwitches };
 }
 
 /**
  * Update a water heater endpoint with fresh Overkiz state.
+ * Updates the thermostat values, temperature measurement, and child switch states.
  *
  * @param endpoint
+ * @param childSwitches
  * @param device
  * @param log
  */
 export async function updateWaterHeaterEndpoint(
   endpoint: MatterbridgeEndpoint,
+  childSwitches: WaterHeaterChildSwitch[],
   device: OverkizDeviceInfo,
   log: AnsiLogger,
 ): Promise<void> {
@@ -106,6 +129,7 @@ export async function updateWaterHeaterEndpoint(
     device.getNumber('core:WaterTemperatureState');
   if (rawTemp !== 0) {
     await endpoint.setAttribute('thermostat', 'localTemperature', Math.round(rawTemp * 100));
+    await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', Math.round(rawTemp * 100));
   }
 
   const rawTarget = device.getNumber('core:TargetTemperatureState') || device.getNumber('core:WaterTargetTemperatureState');
@@ -113,9 +137,12 @@ export async function updateWaterHeaterEndpoint(
     await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', Math.round(rawTarget * 100));
   }
 
-  // Update systemMode based on current Overkiz state
-  const systemMode = resolveSystemMode(device);
-  await endpoint.setAttribute('thermostat', 'systemMode', systemMode);
+  // Update child switch states
+  for (const { endpoint: childEp, switchDef } of childSwitches) {
+    const isOn = switchDef.isOn(device);
+    await childEp.setAttribute('onOff', 'onOff', isOn);
+    log.debug(`  ↳ Updated child switch "${switchDef.idSuffix}": isOn=${isOn}`);
+  }
 
-  log.debug(`Updated water heater "${device.label}": temp=${rawTemp}°C target=${rawTarget}°C systemMode=${systemMode}`);
+  log.debug(`Updated water heater "${device.label}": temp=${rawTemp}°C target=${rawTarget}°C`);
 }
