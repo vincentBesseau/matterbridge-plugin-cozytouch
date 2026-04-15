@@ -93,7 +93,15 @@ export function createWaterHeaterEndpoint(device: OverkizDeviceInfo, vendorId: n
 
     const isOn = switchDef.isOn(device);
     const childName = switchDef.idSuffix.replace('-', '');
+    const childLabel = `${device.label}${switchDef.labelSuffix}`;
     const child = endpoint.addChildDeviceType(childName, onOffOutlet, { id: device.uuid + switchDef.idSuffix });
+    child.createDefaultBridgedDeviceBasicInformationClusterServer(
+      childLabel,
+      `${device.serialNumber}${switchDef.idSuffix}`,
+      vendorId,
+      device.manufacturer,
+      `${device.model}${switchDef.labelSuffix}`,
+    );
     child.createDefaultOnOffClusterServer(isOn);
     child.addRequiredClusterServers();
 

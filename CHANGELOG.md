@@ -10,6 +10,12 @@ If you like this project and find it useful, please consider giving it a star on
 >
 > Keeping your plugin repository aligned with the latest template is important for security, CI reliability, and developer experience. See the Periodical Updates section in the [README](README.md#periodical-updates) for guidance on what to periodically copy/update (e.g., `.devcontainer`, workflows, and tooling configs).
 
+## [0.2.2] - 2026-04-15
+
+### Fixed
+
+- **Water heater child switches**: Added `BridgedDeviceBasicInformation` cluster with explicit labels (e.g. "Boost", "Absence", "Mode Auto/Manuel") on each child OnOff endpoint. This allows Gladys (and other Matter controllers) to properly identify and distinguish the switch functions instead of showing generic unnamed switches.
+
 ## [1.0.15] - 2026-04-07
 
 ### Changed
