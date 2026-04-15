@@ -143,10 +143,11 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
       // Listen for Overkiz state changes and update Matter endpoint
       tracked.overkizDevice.on('states', async () => {
         try {
+          this.log.info(`Overkiz state change event for "${tracked.deviceInfo.label}"`);
           const freshInfo = toDeviceInfo(tracked.overkizDevice);
 
           if (tracked.deviceType === MatterDeviceType.WaterHeater) {
-            // Water heater: update thermostat + child switches
+            // Water heater: update thermostat + switches
             await updateWaterHeaterEndpoint(tracked.endpoint, tracked.childSwitches ?? [], freshInfo, this.log);
           } else {
             await this.updateEndpoint(tracked.endpoint, freshInfo, tracked.deviceType);
@@ -155,6 +156,19 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
           this.log.error(`Error updating device "${tracked.deviceInfo.label}": ${error instanceof Error ? error.message : String(error)}`);
         }
       });
+
+      // Push current values immediately so controllers have data right away
+      try {
+        const currentInfo = toDeviceInfo(tracked.overkizDevice);
+        if (tracked.deviceType === MatterDeviceType.WaterHeater) {
+          await updateWaterHeaterEndpoint(tracked.endpoint, tracked.childSwitches ?? [], currentInfo, this.log);
+        } else {
+          await this.updateEndpoint(tracked.endpoint, currentInfo, tracked.deviceType);
+        }
+        this.log.info(`Pushed initial state for "${tracked.deviceInfo.label}"`);
+      } catch (error) {
+        this.log.warn(`Failed to push initial state for "${tracked.deviceInfo.label}": ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
 
     // Set up command handlers
