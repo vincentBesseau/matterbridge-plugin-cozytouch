@@ -10,6 +10,13 @@ If you like this project and find it useful, please consider giving it a star on
 >
 > Keeping your plugin repository aligned with the latest template is important for security, CI reliability, and developer experience. See the Periodical Updates section in the [README](README.md#periodical-updates) for guidance on what to periodically copy/update (e.g., `.devcontainer`, workflows, and tooling configs).
 
+## [0.2.7] - 2026-04-15
+
+### Fixed
+
+- **Force-notify on startup**: Controllers like Gladys only receive attribute *change* notifications. If the endpoint already has the correct value when Gladys subscribes, no notification is sent and Gladys never learns the initial state. New `forceNotifyAllStates()` method briefly sets a sentinel value (±1 for numbers, toggled boolean for switches) then immediately sets the real value, guaranteeing a change notification reaches every subscribed controller.
+- **Periodic push uses regular setAttribute**: The periodic 60s push continues to use standard `setAttribute` (efficient no-op when unchanged). Only the initial delayed pushes (30s and 90s post-configure) use the force-notify mechanism.
+
 ## [0.2.6] - 2026-04-15
 
 ### Fixed

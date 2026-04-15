@@ -158,20 +158,25 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
       });
     }
 
-    // Push current values after a delay to let commissioning complete
-    this.log.info('Scheduling initial state push in 30s...');
+    // Force-notify after a delay to let commissioning & subscription complete.
+    // Controllers (like Gladys) only listen for attribute *changes*; if the
+    // value in the endpoint already matches what Overkiz reports, a plain
+    // setAttribute is a no-op from the Matter notification perspective.
+    // forceNotifyAllStates briefly sets a different value then the real one,
+    // guaranteeing a change notification is emitted.
+    this.log.info('Scheduling initial force-notify in 30s...');
     setTimeout(() => {
-      this.log.info('Executing delayed initial state push (30s)...');
-      this.pushAllStates().catch((error) => {
-        this.log.error(`Failed delayed initial push: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      this.log.info('Executing delayed force-notify (30s)...');
+      this.forceNotifyAllStates().catch((error) => {
+        this.log.error(`Failed delayed force-notify: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       });
     }, 30_000);
 
-    // Second push at 90s to cover controllers that connect later
+    // Second force-notify at 90s to cover controllers that connect later
     setTimeout(() => {
-      this.log.info('Executing second state push (90s)...');
-      this.pushAllStates().catch((error) => {
-        this.log.error(`Failed second push: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      this.log.info('Executing second force-notify (90s)...');
+      this.forceNotifyAllStates().catch((error) => {
+        this.log.error(`Failed second force-notify: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       });
     }, 90_000);
 
@@ -214,6 +219,96 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
       }
     }
     this.log.info(`pushAllStates: done.`);
+  }
+
+  /**
+   * Force Matter change notifications for all tracked endpoints.
+   *
+   * Controllers like Gladys only react to attribute *changes*.
+   * If the current endpoint value already matches the Overkiz value,
+   * a plain setAttribute is a no-op from the notification perspective.
+   *
+   * This method writes a sentinel value (±1 or toggled boolean) to each
+   * attribute, then immediately writes the real value, guaranteeing that
+   * a change notification reaches every subscribed controller.
+   */
+  private async forceNotifyAllStates(): Promise<void> {
+    this.log.info(`forceNotifyAllStates: kicking ${this.trackedDevices.size} device(s)...`);
+    for (const [deviceURL, tracked] of this.trackedDevices) {
+      try {
+        const currentInfo = toDeviceInfo(tracked.overkizDevice);
+        this.log.info(`forceNotifyAllStates: kicking "${tracked.deviceInfo.label}" (${deviceURL})`);
+
+        if (tracked.deviceType === MatterDeviceType.WaterHeater) {
+          await this.forceNotifyWaterHeater(tracked.endpoint, tracked.childSwitches ?? [], currentInfo);
+        }
+        // TODO: implement forceNotify for other device types if needed
+
+        this.log.info(`forceNotifyAllStates: ✅ kicked "${tracked.deviceInfo.label}"`);
+      } catch (error) {
+        this.log.error(`forceNotifyAllStates: ❌ failed for "${tracked.deviceInfo.label}": ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      }
+    }
+    this.log.info(`forceNotifyAllStates: done.`);
+  }
+
+  /**
+   * Force-notify a water heater endpoint by briefly setting sentinel values.
+   */
+  private async forceNotifyWaterHeater(
+    endpoint: MatterbridgeEndpoint,
+    childSwitches: WaterHeaterChildSwitch[],
+    device: OverkizDeviceInfo,
+  ): Promise<void> {
+    // --- Temperature ---
+    const rawTemp = this.getFirstAvailableNumber(device, [
+      'modbuslink:MiddleWaterTemperatureState',
+      'core:MiddleWaterTemperatureInState',
+      'core:TemperatureState',
+      'core:WaterTemperatureState',
+    ]);
+    if (rawTemp !== undefined) {
+      const realValue = Math.round(rawTemp * 100);
+      const sentinel = realValue + 1;
+      this.log.info(`forceNotify: thermostat localTemperature sentinel=${sentinel} → real=${realValue}`);
+      await endpoint.setAttribute('thermostat', 'localTemperature', sentinel, this.log);
+      await endpoint.setAttribute('thermostat', 'localTemperature', realValue, this.log);
+      await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', sentinel, this.log);
+      await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', realValue, this.log);
+    }
+
+    // --- Target temperature ---
+    const rawTarget = this.getFirstAvailableNumber(device, [
+      'core:TargetTemperatureState',
+      'core:WaterTargetTemperatureState',
+    ]);
+    if (rawTarget !== undefined) {
+      const realValue = Math.round(rawTarget * 100);
+      const sentinel = realValue + 1;
+      this.log.info(`forceNotify: thermostat occupiedHeatingSetpoint sentinel=${sentinel} → real=${realValue}`);
+      await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', sentinel, this.log);
+      await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', realValue, this.log);
+    }
+
+    // --- Switches ---
+    for (const { endpoint: switchEp, switchDef } of childSwitches) {
+      const isOn = switchDef.isOn(device);
+      this.log.info(`forceNotify: switch "${switchDef.labelSuffix}" sentinel=${!isOn} → real=${isOn}`);
+      await switchEp.setAttribute('onOff', 'onOff', !isOn, this.log);
+      await switchEp.setAttribute('onOff', 'onOff', isOn, this.log);
+    }
+  }
+
+  /**
+   * Return the first available numeric state from a device, or undefined if none found.
+   */
+  private getFirstAvailableNumber(device: OverkizDeviceInfo, stateNames: string[]): number | undefined {
+    for (const name of stateNames) {
+      if (device.hasState(name)) {
+        return device.getNumber(name);
+      }
+    }
+    return undefined;
   }
 
   override async onChangeLoggerLevel(logLevel: LogLevel) {
