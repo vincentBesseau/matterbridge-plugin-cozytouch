@@ -124,6 +124,29 @@ The water heater is exposed as a **single composed Matter device** containing:
 
 La méthode recommandée pour faire tourner le plugin est via Docker.
 
+### ⚠️ Important : réseau et mDNS
+
+Le protocole Matter utilise **mDNS** (multicast DNS) pour la découverte et la communication entre appareils. Cela impose des contraintes réseau :
+
+| Plateforme | Compose file | Mode réseau | mDNS |
+|---|---|---|---|
+| **Linux** (production / Gladys) | `docker-compose.yml` | `network_mode: host` ✅ | Fonctionne nativement |
+| **macOS** (développement) | `docker-compose.macos.yml` | Bridge + port mapping | ⚠️ Limité |
+
+> **Sur Linux**, `network_mode: host` est **obligatoire** pour que les contrôleurs Matter (Gladys, Apple Home, Google Home…) puissent communiquer avec le bridge. Sans cela, les paquets mDNS multicast ne traversent pas le NAT Docker et les mises à jour d'état ne sont pas reçues.
+
+#### Spécifier l'interface mDNS
+
+Si votre machine a plusieurs interfaces réseau (Docker en crée beaucoup), vous devez indiquer à Matterbridge laquelle utiliser :
+
+```bash
+# Via variable d'environnement
+MDNS_INTERFACE=eth0 docker compose up -d
+
+# Interfaces courantes : eth0, end0, enp0s3, wlan0
+# Pour trouver la bonne : ip -o link show | grep -v docker
+```
+
 ### Démarrage rapide
 
 ```bash
@@ -151,14 +174,24 @@ npm run docker:shell     # Ouvrir un shell dans le container
 npm run docker:restart   # Redémarrer
 ```
 
-### docker-compose.yml
+### docker-compose.yml (Linux / production)
 
-Le `docker-compose.yml` fourni utilise :
+Le `docker-compose.yml` principal utilise :
 
 - L'image officielle `luligu/matterbridge:latest`
-- Le mode réseau `host` (requis pour Matter/mDNS)
+- Le mode réseau **`host`** (requis pour Matter/mDNS)
+- Le paramètre `--mdnsinterface` (via `MDNS_INTERFACE`) pour cibler la bonne interface
 - Des volumes persistants pour les données Matterbridge
 - Un montage du code source du plugin
+
+### docker-compose.macos.yml (macOS / développement)
+
+Le fichier `docker-compose.macos.yml` utilise le mapping de ports classique car `network_mode: host` n'est pas supporté sur macOS Docker Desktop.
+
+```bash
+# Utilisation sur macOS
+docker compose -f docker-compose.macos.yml up -d
+```
 
 ### Configuration via le Frontend
 

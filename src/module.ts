@@ -134,45 +134,86 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
 
   override async onConfigure() {
     await super.onConfigure();
-    this.log.info('onConfigure called');
+    this.log.info('onConfigure called — setting up state listeners and push timers');
 
     // Set up state change listeners for each tracked device
     for (const [_deviceURL, tracked] of this.trackedDevices) {
-      this.log.info(`Configuring device: ${tracked.endpoint.uniqueId}`);
+      this.log.info(`Configuring state listener for: "${tracked.deviceInfo.label}" (${tracked.deviceType})`);
 
       // Listen for Overkiz state changes and update Matter endpoint
-      tracked.overkizDevice.on('states', async () => {
+      tracked.overkizDevice.on('states', async (changedStates: unknown[]) => {
         try {
-          this.log.info(`Overkiz state change event for "${tracked.deviceInfo.label}"`);
+          this.log.info(`Overkiz state change event for "${tracked.deviceInfo.label}" — ${Array.isArray(changedStates) ? changedStates.length : '?'} state(s) changed`);
           const freshInfo = toDeviceInfo(tracked.overkizDevice);
 
           if (tracked.deviceType === MatterDeviceType.WaterHeater) {
-            // Water heater: update thermostat + switches
             await updateWaterHeaterEndpoint(tracked.endpoint, tracked.childSwitches ?? [], freshInfo, this.log);
           } else {
             await this.updateEndpoint(tracked.endpoint, freshInfo, tracked.deviceType);
           }
+          this.log.info(`Overkiz state change for "${tracked.deviceInfo.label}" processed successfully`);
         } catch (error) {
-          this.log.error(`Error updating device "${tracked.deviceInfo.label}": ${error instanceof Error ? error.message : String(error)}`);
+          this.log.error(`Error updating device "${tracked.deviceInfo.label}": ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
         }
       });
+    }
 
-      // Push current values immediately so controllers have data right away
+    // Push current values after a delay to let commissioning complete
+    this.log.info('Scheduling initial state push in 30s...');
+    setTimeout(() => {
+      this.log.info('Executing delayed initial state push (30s)...');
+      this.pushAllStates().catch((error) => {
+        this.log.error(`Failed delayed initial push: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      });
+    }, 30_000);
+
+    // Second push at 90s to cover controllers that connect later
+    setTimeout(() => {
+      this.log.info('Executing second state push (90s)...');
+      this.pushAllStates().catch((error) => {
+        this.log.error(`Failed second push: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      });
+    }, 90_000);
+
+    // Set up a periodic refresh to ensure controllers always have fresh data
+    // (the Overkiz 'states' event only fires on value changes)
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+    }
+    const refreshInterval = (this.config.pollingInterval ?? 60) * 1000;
+    this.pollingTimer = setInterval(() => {
+      this.log.info('Periodic state push triggered');
+      this.pushAllStates().catch((error) => {
+        this.log.error(`Periodic push failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      });
+    }, refreshInterval);
+    this.log.info(`Periodic state push configured every ${refreshInterval / 1000}s`);
+
+    // Set up command handlers
+    this.setupCommandHandlers();
+    this.log.info('onConfigure complete — all listeners and timers active');
+  }
+
+  /**
+   * Push current Overkiz state to all tracked Matter endpoints.
+   */
+  private async pushAllStates(): Promise<void> {
+    this.log.info(`pushAllStates: pushing state for ${this.trackedDevices.size} device(s)...`);
+    for (const [deviceURL, tracked] of this.trackedDevices) {
       try {
+        this.log.info(`pushAllStates: updating "${tracked.deviceInfo.label}" (type=${tracked.deviceType}, url=${deviceURL})`);
         const currentInfo = toDeviceInfo(tracked.overkizDevice);
         if (tracked.deviceType === MatterDeviceType.WaterHeater) {
           await updateWaterHeaterEndpoint(tracked.endpoint, tracked.childSwitches ?? [], currentInfo, this.log);
         } else {
           await this.updateEndpoint(tracked.endpoint, currentInfo, tracked.deviceType);
         }
-        this.log.info(`Pushed initial state for "${tracked.deviceInfo.label}"`);
+        this.log.info(`pushAllStates: ✅ updated "${tracked.deviceInfo.label}"`);
       } catch (error) {
-        this.log.warn(`Failed to push initial state for "${tracked.deviceInfo.label}": ${error instanceof Error ? error.message : String(error)}`);
+        this.log.error(`pushAllStates: ❌ failed for "${tracked.deviceInfo.label}": ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       }
     }
-
-    // Set up command handlers
-    this.setupCommandHandlers();
+    this.log.info(`pushAllStates: done.`);
   }
 
   override async onChangeLoggerLevel(logLevel: LogLevel) {

@@ -132,28 +132,53 @@ export async function updateWaterHeaterEndpoint(
   device: OverkizDeviceInfo,
   log: AnsiLogger,
 ): Promise<void> {
-  // Update thermostat temperature values
-  const rawTemp =
-    device.getNumber('modbuslink:MiddleWaterTemperatureState') ||
-    device.getNumber('core:MiddleWaterTemperatureInState') ||
-    device.getNumber('core:TemperatureState') ||
-    device.getNumber('core:WaterTemperatureState');
-  if (rawTemp !== 0) {
-    await endpoint.setAttribute('thermostat', 'localTemperature', Math.round(rawTemp * 100));
-    await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', Math.round(rawTemp * 100));
+  // Read temperature using nullish-aware helpers to distinguish 0 from "not found"
+  const rawTemp = getFirstAvailableNumber(device, [
+    'modbuslink:MiddleWaterTemperatureState',
+    'core:MiddleWaterTemperatureInState',
+    'core:TemperatureState',
+    'core:WaterTemperatureState',
+  ]);
+
+  if (rawTemp !== undefined) {
+    const tempValue = Math.round(rawTemp * 100);
+    log.info(`Updating thermostat localTemperature=${tempValue} (${rawTemp}°C)`);
+    await endpoint.setAttribute('thermostat', 'localTemperature', tempValue, log);
+    await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', tempValue, log);
+  } else {
+    log.warn(`Water heater "${device.label}": no temperature state found`);
   }
 
-  const rawTarget = device.getNumber('core:TargetTemperatureState') || device.getNumber('core:WaterTargetTemperatureState');
-  if (rawTarget !== 0) {
-    await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', Math.round(rawTarget * 100));
+  const rawTarget = getFirstAvailableNumber(device, ['core:TargetTemperatureState', 'core:WaterTargetTemperatureState']);
+
+  if (rawTarget !== undefined) {
+    const targetValue = Math.round(rawTarget * 100);
+    log.info(`Updating thermostat occupiedHeatingSetpoint=${targetValue} (${rawTarget}°C)`);
+    await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', targetValue, log);
+  } else {
+    log.warn(`Water heater "${device.label}": no target temperature state found`);
   }
 
   // Update switch states
   for (const { endpoint: switchEp, switchDef } of childSwitches) {
     const isOn = switchDef.isOn(device);
-    await switchEp.setAttribute('onOff', 'onOff', isOn);
-    log.debug(`  ↳ Updated switch "${switchDef.idSuffix}": isOn=${isOn}`);
+    log.info(`Updating switch "${switchDef.labelSuffix}": onOff=${isOn}`);
+    await switchEp.setAttribute('onOff', 'onOff', isOn, log);
   }
 
-  log.debug(`Updated water heater "${device.label}": temp=${rawTemp}°C target=${rawTarget}°C`);
+  log.info(`Updated water heater "${device.label}": temp=${rawTemp ?? 'N/A'}°C target=${rawTarget ?? 'N/A'}°C switches=${childSwitches.length}`);
+}
+
+/**
+ * Return the first available numeric state value from the device, or undefined if none found.
+ * Unlike getNumber() which returns 0 for missing states, this correctly distinguishes
+ * "state not found" from "state value is 0".
+ */
+function getFirstAvailableNumber(device: OverkizDeviceInfo, stateNames: string[]): number | undefined {
+  for (const name of stateNames) {
+    if (device.hasState(name)) {
+      return device.getNumber(name);
+    }
+  }
+  return undefined;
 }

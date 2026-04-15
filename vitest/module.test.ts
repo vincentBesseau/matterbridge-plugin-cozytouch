@@ -109,7 +109,7 @@ describe('Matterbridge Plugin Cozytouch', () => {
 
   it('should configure', async () => {
     await instance.onConfigure();
-    expect(mockLog.info).toHaveBeenCalledWith('onConfigure called');
+    expect(mockLog.info).toHaveBeenCalledWith('onConfigure called — setting up state listeners and push timers');
   });
 
   it('should change logger level', async () => {

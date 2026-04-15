@@ -10,6 +10,15 @@ If you like this project and find it useful, please consider giving it a star on
 >
 > Keeping your plugin repository aligned with the latest template is important for security, CI reliability, and developer experience. See the Periodical Updates section in the [README](README.md#periodical-updates) for guidance on what to periodically copy/update (e.g., `.devcontainer`, workflows, and tooling configs).
 
+## [0.2.6] - 2026-04-15
+
+### Fixed
+
+- **State push visibility**: All `setAttribute` calls now pass the logger, so Matterbridge logs every attribute update with old → new values. This makes it easy to confirm values are being pushed to controllers.
+- **Null-safe temperature reads**: `updateWaterHeaterEndpoint` now uses `hasState()` before `getNumber()` to correctly distinguish "state not found" from "state value is 0". Avoids the `|| 0` chain that could skip valid zero values or treat missing states as zero.
+- **Better push timing**: Initial push delayed from 10s to 30s, with a second push at 90s, to cover controllers that commission or reconnect after startup.
+- **Verbose logging in onConfigure and pushAllStates**: Every step now logged at `info` level (timer scheduling, per-device push, success/failure) for production diagnostics.
+
 ## [0.2.4] - 2026-04-15
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "matterbridge-plugin-cozytouch",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Matterbridge plugin for Atlantic/Thermor/Sauter Cozytouch devices (heaters, water heaters, covers)",
   "author": "https://github.com/vincentBesseau",
   "homepage": "https://github.com/vincentBesseau/matterbridge-plugin-cozytouch",
@@ -57,7 +57,14 @@
     "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
     "cleanBuild": "npm run clean && npm run build",
     "test": "vitest run",
-    "prepublishOnly": "npm run cleanBuild && npm test"
+    "prepublishOnly": "npm run cleanBuild && npm test",
+    "docker:setup": "./scripts/docker-setup.sh",
+    "docker:setup:configure": "./scripts/docker-setup.sh --configure",
+    "docker:start": "docker compose up -d",
+    "docker:stop": "docker compose down",
+    "docker:restart": "docker compose restart",
+    "docker:logs": "docker compose logs -f",
+    "docker:shell": "docker compose exec matterbridge sh"
   },
   "dependencies": {
     "overkiz-client": "^1.0.20"

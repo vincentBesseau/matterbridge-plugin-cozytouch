@@ -1,22 +1,15 @@
 ###############################################################################
-# Matterbridge + plugin Cozytouch
+# Matterbridge + plugin Cozytouch — macOS (développement)
 #
-# Start :  docker compose up -d
-# Logs  :  docker compose logs -f
-# Stop  :  docker compose down
-# Shell :  docker compose exec matterbridge sh
+# Sur macOS, network_mode: host n'est pas supporté.
+# Ce fichier utilise le mapping de ports classique.
 #
-# ⚠️  Sur Linux (serveur / Gladys), utilisez network_mode: host
-#     pour que mDNS (multicast) fonctionne correctement avec Matter.
-#     Sur macOS, network_mode: host n'est pas supporté : utilisez
-#     docker-compose.macos.yml (mapping de ports) pour le développement.
+# Start :  docker compose -f docker-compose.macos.yml up -d
+# Logs  :  docker compose -f docker-compose.macos.yml logs -f
+# Stop  :  docker compose -f docker-compose.macos.yml down
 #
-# Interface mDNS :
-#     Définissez MDNS_INTERFACE avec le nom de votre interface réseau
-#     physique (eth0, end0, wlan0, etc.) pour éviter que Matterbridge
-#     tente de publier sur les bridges Docker.
-#     → docker compose up -d                        (auto-détection)
-#     → MDNS_INTERFACE=eth0 docker compose up -d    (forcé)
+# ⚠️  En production (Linux / Gladys), utilisez docker-compose.yml
+#     avec network_mode: host pour que mDNS fonctionne correctement.
 ###############################################################################
 
 services:
@@ -25,10 +18,11 @@ services:
     container_name: matterbridge-cozytouch
     restart: unless-stopped
 
-    # network_mode: host est OBLIGATOIRE sur Linux pour que mDNS
-    # (utilisé par Matter) fonctionne. Le multicast UDP ne traverse
-    # pas le NAT du bridge Docker.
-    network_mode: host
+    # Sur macOS, on mappe les ports nécessaires
+    ports:
+      - '8283:8283'       # Frontend web Matterbridge
+      - '5540:5540'       # Matter commissioning (TCP+UDP)
+      - '5540:5540/udp'
 
     volumes:
       # Données persistantes Matterbridge (config, state, certs)
@@ -46,22 +40,14 @@ services:
 
     environment:
       - TZ=Europe/Paris
-      # Interface réseau pour mDNS (laisser vide pour auto-détection)
-      - MDNS_INTERFACE=${MDNS_INTERFACE:-}
 
-    # Installe les deps du plugin, lie matterbridge, et passe
-    # --mdnsinterface si MDNS_INTERFACE est définie.
+    # Installe les deps du plugin et lie matterbridge avant de démarrer
     entrypoint: >
       sh -c '
         cd /root/Matterbridge/matterbridge-plugin-cozytouch &&
         npm install --omit=dev 2>/dev/null;
         ln -sf /usr/local/lib/node_modules/matterbridge node_modules/matterbridge 2>/dev/null;
-        MDNS_ARG="";
-        if [ -n "$${MDNS_INTERFACE:-}" ]; then
-          MDNS_ARG="-mdnsinterface $${MDNS_INTERFACE}";
-          echo "🌐 Using mDNS interface: $${MDNS_INTERFACE}";
-        fi;
-        exec /matterbridge/entrypoint.latest.sh matterbridge -docker $$MDNS_ARG
+        exec /matterbridge/entrypoint.latest.sh matterbridge -docker
       '
 
     # Health check intégré à l'image
@@ -76,3 +62,4 @@ volumes:
   matterbridge-config:
   matterbridge-certs:
   plugin-node-modules:
+
