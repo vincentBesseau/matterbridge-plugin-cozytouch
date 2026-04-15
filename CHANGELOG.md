@@ -10,13 +10,6 @@ If you like this project and find it useful, please consider giving it a star on
 >
 > Keeping your plugin repository aligned with the latest template is important for security, CI reliability, and developer experience. See the Periodical Updates section in the [README](README.md#periodical-updates) for guidance on what to periodically copy/update (e.g., `.devcontainer`, workflows, and tooling configs).
 
-## [0.2.8] - 2026-04-15
-
-### Fixed
-
-- **Force-notify setpoint sentinel**: Use `-1` instead of `+1` for the setpoint sentinel value. The previous `+1` exceeded `maxHeatSetpointLimit` (7000) when the target was already at maximum (70°C), causing a Matter validation error that aborted the entire force-notify (switches were never kicked).
-- **Resilient force-notify**: Each attribute section (temperature, setpoint, each switch) is now wrapped in its own `try/catch`. A failure in one attribute no longer prevents the others from being notified.
-
 ## [0.2.7] - 2026-04-15
 
 ### Fixed

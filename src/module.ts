@@ -75,6 +75,8 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
   private overkizClient: OverkizClient | undefined;
   private trackedDevices: Map<string, TrackedDevice> = new Map();
   private pollingTimer: NodeJS.Timeout | undefined;
+  private forceNotifyTimers: NodeJS.Timeout[] = [];
+  private configuredOnce = false;
   declare config: CozytouchConfig;
 
   constructor(matterbridge: PlatformMatterbridge, log: AnsiLogger, config: CozytouchConfig) {
@@ -136,26 +138,43 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
     await super.onConfigure();
     this.log.info('onConfigure called — setting up state listeners and push timers');
 
-    // Set up state change listeners for each tracked device
-    for (const [_deviceURL, tracked] of this.trackedDevices) {
-      this.log.info(`Configuring state listener for: "${tracked.deviceInfo.label}" (${tracked.deviceType})`);
+    // Clean up previous timers (onConfigure can be called multiple times
+    // after each re-commissioning cycle)
+    for (const timer of this.forceNotifyTimers) {
+      clearTimeout(timer);
+    }
+    this.forceNotifyTimers = [];
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = undefined;
+    }
 
-      // Listen for Overkiz state changes and update Matter endpoint
-      tracked.overkizDevice.on('states', async (changedStates: unknown[]) => {
-        try {
-          this.log.info(`Overkiz state change event for "${tracked.deviceInfo.label}" — ${Array.isArray(changedStates) ? changedStates.length : '?'} state(s) changed`);
-          const freshInfo = toDeviceInfo(tracked.overkizDevice);
+    // Set up state change listeners for each tracked device.
+    // Only register once — EventEmitter will accumulate listeners on repeated calls.
+    if (!this.configuredOnce) {
+      for (const [_deviceURL, tracked] of this.trackedDevices) {
+        this.log.info(`Configuring state listener for: "${tracked.deviceInfo.label}" (${tracked.deviceType})`);
 
-          if (tracked.deviceType === MatterDeviceType.WaterHeater) {
-            await updateWaterHeaterEndpoint(tracked.endpoint, tracked.childSwitches ?? [], freshInfo, this.log);
-          } else {
-            await this.updateEndpoint(tracked.endpoint, freshInfo, tracked.deviceType);
+        // Listen for Overkiz state changes and update Matter endpoint
+        tracked.overkizDevice.on('states', async (changedStates: unknown[]) => {
+          try {
+            this.log.info(`Overkiz state change event for "${tracked.deviceInfo.label}" — ${Array.isArray(changedStates) ? changedStates.length : '?'} state(s) changed`);
+            const freshInfo = toDeviceInfo(tracked.overkizDevice);
+
+            if (tracked.deviceType === MatterDeviceType.WaterHeater) {
+              await updateWaterHeaterEndpoint(tracked.endpoint, tracked.childSwitches ?? [], freshInfo, this.log);
+            } else {
+              await this.updateEndpoint(tracked.endpoint, freshInfo, tracked.deviceType);
+            }
+            this.log.info(`Overkiz state change for "${tracked.deviceInfo.label}" processed successfully`);
+          } catch (error) {
+            this.log.error(`Error updating device "${tracked.deviceInfo.label}": ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
           }
-          this.log.info(`Overkiz state change for "${tracked.deviceInfo.label}" processed successfully`);
-        } catch (error) {
-          this.log.error(`Error updating device "${tracked.deviceInfo.label}": ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-        }
-      });
+        });
+      }
+      this.configuredOnce = true;
+    } else {
+      this.log.info('State listeners already configured (re-entry) — skipping listener registration');
     }
 
     // Force-notify after a delay to let commissioning & subscription complete.
@@ -165,26 +184,27 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
     // forceNotifyAllStates briefly sets a different value then the real one,
     // guaranteeing a change notification is emitted.
     this.log.info('Scheduling initial force-notify in 30s...');
-    setTimeout(() => {
-      this.log.info('Executing delayed force-notify (30s)...');
-      this.forceNotifyAllStates().catch((error) => {
-        this.log.error(`Failed delayed force-notify: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-      });
-    }, 30_000);
+    this.forceNotifyTimers.push(
+      setTimeout(() => {
+        this.log.info('Executing delayed force-notify (30s)...');
+        this.forceNotifyAllStates().catch((error) => {
+          this.log.error(`Failed delayed force-notify: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+        });
+      }, 30_000),
+    );
 
     // Second force-notify at 90s to cover controllers that connect later
-    setTimeout(() => {
-      this.log.info('Executing second force-notify (90s)...');
-      this.forceNotifyAllStates().catch((error) => {
-        this.log.error(`Failed second force-notify: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-      });
-    }, 90_000);
+    this.forceNotifyTimers.push(
+      setTimeout(() => {
+        this.log.info('Executing second force-notify (90s)...');
+        this.forceNotifyAllStates().catch((error) => {
+          this.log.error(`Failed second force-notify: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+        });
+      }, 90_000),
+    );
 
     // Set up a periodic refresh to ensure controllers always have fresh data
     // (the Overkiz 'states' event only fires on value changes)
-    if (this.pollingTimer) {
-      clearInterval(this.pollingTimer);
-    }
     const refreshInterval = (this.config.pollingInterval ?? 60) * 1000;
     this.pollingTimer = setInterval(() => {
       this.log.info('Periodic state push triggered');
@@ -343,6 +363,12 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
       clearInterval(this.pollingTimer);
       this.pollingTimer = undefined;
     }
+
+    // Clear force-notify timers
+    for (const timer of this.forceNotifyTimers) {
+      clearTimeout(timer);
+    }
+    this.forceNotifyTimers = [];
 
     // Clear tracked devices
     this.trackedDevices.clear();
