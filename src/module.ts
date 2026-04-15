@@ -254,48 +254,67 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
 
   /**
    * Force-notify a water heater endpoint by briefly setting sentinel values.
+   *
+   * Each section is wrapped in its own try/catch so that a failure in one
+   * attribute (e.g. setpoint at max limit) does not prevent the others
+   * (temperature, switches) from being notified.
    */
   private async forceNotifyWaterHeater(
     endpoint: MatterbridgeEndpoint,
     childSwitches: WaterHeaterChildSwitch[],
     device: OverkizDeviceInfo,
   ): Promise<void> {
-    // --- Temperature ---
-    const rawTemp = this.getFirstAvailableNumber(device, [
-      'modbuslink:MiddleWaterTemperatureState',
-      'core:MiddleWaterTemperatureInState',
-      'core:TemperatureState',
-      'core:WaterTemperatureState',
-    ]);
-    if (rawTemp !== undefined) {
-      const realValue = Math.round(rawTemp * 100);
-      const sentinel = realValue + 1;
-      this.log.info(`forceNotify: thermostat localTemperature sentinel=${sentinel} → real=${realValue}`);
-      await endpoint.setAttribute('thermostat', 'localTemperature', sentinel, this.log);
-      await endpoint.setAttribute('thermostat', 'localTemperature', realValue, this.log);
-      await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', sentinel, this.log);
-      await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', realValue, this.log);
+    // --- Temperature (read-only, no thermostat limits apply) ---
+    try {
+      const rawTemp = this.getFirstAvailableNumber(device, [
+        'modbuslink:MiddleWaterTemperatureState',
+        'core:MiddleWaterTemperatureInState',
+        'core:TemperatureState',
+        'core:WaterTemperatureState',
+      ]);
+      if (rawTemp !== undefined) {
+        const realValue = Math.round(rawTemp * 100);
+        // Use -1 to stay safely below any potential max limit
+        const sentinel = realValue - 1;
+        this.log.info(`forceNotify: thermostat localTemperature sentinel=${sentinel} → real=${realValue}`);
+        await endpoint.setAttribute('thermostat', 'localTemperature', sentinel, this.log);
+        await endpoint.setAttribute('thermostat', 'localTemperature', realValue, this.log);
+        await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', sentinel, this.log);
+        await endpoint.setAttribute('temperatureMeasurement', 'measuredValue', realValue, this.log);
+      }
+    } catch (error) {
+      this.log.warn(`forceNotify: temperature kick failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    // --- Target temperature ---
-    const rawTarget = this.getFirstAvailableNumber(device, [
-      'core:TargetTemperatureState',
-      'core:WaterTargetTemperatureState',
-    ]);
-    if (rawTarget !== undefined) {
-      const realValue = Math.round(rawTarget * 100);
-      const sentinel = realValue + 1;
-      this.log.info(`forceNotify: thermostat occupiedHeatingSetpoint sentinel=${sentinel} → real=${realValue}`);
-      await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', sentinel, this.log);
-      await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', realValue, this.log);
+    // --- Target temperature (setpoint — subject to min/max limits) ---
+    try {
+      const rawTarget = this.getFirstAvailableNumber(device, [
+        'core:TargetTemperatureState',
+        'core:WaterTargetTemperatureState',
+      ]);
+      if (rawTarget !== undefined) {
+        const realValue = Math.round(rawTarget * 100);
+        // Always use -1 so we stay within maxHeatSetpointLimit
+        // (e.g. if target=7000 and max=7000, +1 would be rejected)
+        const sentinel = realValue - 1;
+        this.log.info(`forceNotify: thermostat occupiedHeatingSetpoint sentinel=${sentinel} → real=${realValue}`);
+        await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', sentinel, this.log);
+        await endpoint.setAttribute('thermostat', 'occupiedHeatingSetpoint', realValue, this.log);
+      }
+    } catch (error) {
+      this.log.warn(`forceNotify: setpoint kick failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     // --- Switches ---
     for (const { endpoint: switchEp, switchDef } of childSwitches) {
-      const isOn = switchDef.isOn(device);
-      this.log.info(`forceNotify: switch "${switchDef.labelSuffix}" sentinel=${!isOn} → real=${isOn}`);
-      await switchEp.setAttribute('onOff', 'onOff', !isOn, this.log);
-      await switchEp.setAttribute('onOff', 'onOff', isOn, this.log);
+      try {
+        const isOn = switchDef.isOn(device);
+        this.log.info(`forceNotify: switch "${switchDef.labelSuffix}" sentinel=${!isOn} → real=${isOn}`);
+        await switchEp.setAttribute('onOff', 'onOff', !isOn, this.log);
+        await switchEp.setAttribute('onOff', 'onOff', isOn, this.log);
+      } catch (error) {
+        this.log.warn(`forceNotify: switch "${switchDef.labelSuffix}" kick failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 
