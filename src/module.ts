@@ -279,10 +279,17 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
       return;
     }
 
-    // Water heater: composed device (thermostat + child switches)
+    // Water heater: thermostat + independent switch endpoints
     if (deviceType === MatterDeviceType.WaterHeater) {
       const result = createWaterHeaterEndpoint(deviceInfo, vendorId, this.log);
+
+      // Register thermostat endpoint
       await this.registerDevice(result.endpoint);
+
+      // Register each switch as an independent bridge-level device
+      for (const { endpoint: switchEp } of result.childSwitches) {
+        await this.registerDevice(switchEp);
+      }
 
       this.trackedDevices.set(device.deviceURL, {
         deviceInfo,
@@ -292,7 +299,7 @@ export class CozytouchPlatform extends MatterbridgeDynamicPlatform {
         childSwitches: result.childSwitches,
       });
 
-      this.log.info(`Registered device "${device.label}" as ${deviceType} (widget: ${widgetName}) with ${result.childSwitches.length} child switch(es)`);
+      this.log.info(`Registered device "${device.label}" as ${deviceType} (widget: ${widgetName}) with ${result.childSwitches.length} switch(es)`);
       return;
     }
 
