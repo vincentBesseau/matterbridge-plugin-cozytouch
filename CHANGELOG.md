@@ -10,6 +10,12 @@ If you like this project and find it useful, please consider giving it a star on
 >
 > Keeping your plugin repository aligned with the latest template is important for security, CI reliability, and developer experience. See the Periodical Updates section in the [README](README.md#periodical-updates) for guidance on what to periodically copy/update (e.g., `.devcontainer`, workflows, and tooling configs).
 
+## [0.2.3] - 2026-04-15
+
+### Fixed
+
+- **Remove duplicate endpoints**: `DomesticHotWaterTank` widget is now ignored since its features (boost, absence, DHW mode) are already exposed as child endpoints of the `DomesticHotWaterProduction` WaterHeater device. This removes the duplicate OnOff switches that appeared as separate devices in Gladys.
+
 ## [0.2.2] - 2026-04-15
 
 ### Fixed

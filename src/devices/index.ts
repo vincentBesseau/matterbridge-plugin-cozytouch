@@ -6,7 +6,7 @@
  */
 
 export { createCoverEndpoint, updateCoverEndpoint } from './coverDevice.js';
-export { IGNORED_UI_CLASSES, MatterDeviceType, resolveDeviceType } from './deviceMapping.js';
+export { IGNORED_UI_CLASSES, IGNORED_WIDGETS, MatterDeviceType, resolveDeviceType } from './deviceMapping.js';
 export { createSwitchEndpoint, updateSwitchEndpoint } from './switchDevice.js';
 export { createTemperatureSensorEndpoint, updateTemperatureSensorEndpoint } from './temperatureSensorDevice.js';
 export { createThermostatEndpoint, updateThermostatEndpoint } from './thermostatDevice.js';

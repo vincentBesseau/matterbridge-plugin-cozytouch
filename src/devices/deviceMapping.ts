@@ -59,8 +59,9 @@ export const WIDGET_TO_DEVICE_TYPE: Record<string, MatterDeviceType> = {
   // Humidity sensors
   RelativeHumiditySensor: MatterDeviceType.HumiditySensor,
 
-  // Switch / On-Off devices
-  DomesticHotWaterTank: MatterDeviceType.Switch,
+  // DomesticHotWaterTank is intentionally excluded:
+  // its features (boost, absence, DHW mode) are already exposed as child
+  // endpoints of the DomesticHotWaterProduction WaterHeater device.
 };
 
 /**
@@ -91,12 +92,22 @@ export const UI_CLASS_TO_DEVICE_TYPE: Record<string, MatterDeviceType> = {
 export const IGNORED_UI_CLASSES = new Set(['ProtocolGateway', 'Pod', 'ConfigurationComponent']);
 
 /**
+ * Widget names that should be explicitly ignored even if their uiClass is mapped.
+ * DomesticHotWaterTank is covered by the WaterHeater composed device.
+ */
+export const IGNORED_WIDGETS = new Set(['DomesticHotWaterTank']);
+
+/**
  * Resolve the Matter device type for an Overkiz device.
  *
  * @param widgetName
  * @param uiClass
  */
 export function resolveDeviceType(widgetName: string, uiClass: string): MatterDeviceType {
+  // Skip explicitly ignored widgets
+  if (IGNORED_WIDGETS.has(widgetName)) {
+    return MatterDeviceType.Unknown;
+  }
   // First try widget name (more specific)
   if (widgetName in WIDGET_TO_DEVICE_TYPE) {
     return WIDGET_TO_DEVICE_TYPE[widgetName];

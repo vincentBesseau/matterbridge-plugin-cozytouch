@@ -1,6 +1,6 @@
 {
   "name": "matterbridge-plugin-cozytouch",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Matterbridge plugin for Atlantic/Thermor/Sauter Cozytouch devices (heaters, water heaters, covers)",
   "author": "https://github.com/vincentBesseau",
   "homepage": "https://github.com/vincentBesseau/matterbridge-plugin-cozytouch",
