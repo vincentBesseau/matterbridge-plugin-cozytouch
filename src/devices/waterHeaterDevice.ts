@@ -13,7 +13,7 @@
  * @license Apache-2.0
  */
 
-import { MatterbridgeEndpoint, onOffOutlet, thermostatDevice } from 'matterbridge';
+import { MatterbridgeEndpoint, onOffPlugInUnit, thermostat } from 'matterbridge';
 import { AnsiLogger } from 'matterbridge/logger';
 
 import type { OverkizDeviceInfo } from './types.js';
@@ -67,7 +67,7 @@ export function createWaterHeaterEndpoint(device: OverkizDeviceInfo, vendorId: n
   log.info(`Water heater "${device.label}" raw values: temp=${rawTemp}, middleTemp=${rawMiddleTemp}, target=${rawTarget}, showers=${expectedShowers}`);
   log.info(`Water heater "${device.label}" using: currentTemp=${currentTemp}°C, targetTemp=${targetTemp}°C`);
 
-  const endpoint = new MatterbridgeEndpoint(thermostatDevice, { id: device.uuid })
+  const endpoint = new MatterbridgeEndpoint(thermostat, { id: device.uuid })
     .createDefaultBridgedDeviceBasicInformationClusterServer(device.label, device.serialNumber, vendorId, device.manufacturer, `${device.model} (DHW)`)
     .createDefaultPowerSourceWiredClusterServer()
     .createDefaultHeatingThermostatClusterServer(
@@ -97,7 +97,7 @@ export function createWaterHeaterEndpoint(device: OverkizDeviceInfo, vendorId: n
     const childLabel = `${device.label}${switchDef.labelSuffix}`;
 
     // Create as independent bridge-level endpoint (NOT a child of thermostat)
-    const switchEndpoint = new MatterbridgeEndpoint(onOffOutlet, { id: device.uuid + switchDef.idSuffix })
+    const switchEndpoint = new MatterbridgeEndpoint(onOffPlugInUnit, { id: device.uuid + switchDef.idSuffix })
       .createDefaultBridgedDeviceBasicInformationClusterServer(
         childLabel,
         `${device.serialNumber}${switchDef.idSuffix}`,

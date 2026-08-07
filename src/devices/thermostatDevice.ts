@@ -8,7 +8,7 @@
  * @license Apache-2.0
  */
 
-import { MatterbridgeEndpoint, thermostatDevice } from 'matterbridge';
+import { MatterbridgeEndpoint, thermostat } from 'matterbridge';
 import { AnsiLogger } from 'matterbridge/logger';
 
 import type { OverkizDeviceInfo } from './types.js';
@@ -73,7 +73,7 @@ export function createThermostatEndpoint(device: OverkizDeviceInfo, vendorId: nu
   log.info(`Thermostat "${device.label}" raw values: temp=${rawTemp}, comfortTemp=${comfortTemp}, level=${targetHeatingLevel}`);
   log.info(`Thermostat "${device.label}" using: localTemp=${localTemperature}°C, setpoint=${occupiedHeatingSetpoint}°C`);
 
-  const endpoint = new MatterbridgeEndpoint(thermostatDevice, { id: device.uuid })
+  const endpoint = new MatterbridgeEndpoint(thermostat, { id: device.uuid })
     .createDefaultBridgedDeviceBasicInformationClusterServer(device.label, device.serialNumber, vendorId, device.manufacturer, device.model)
     .createDefaultPowerSourceWiredClusterServer()
     .createDefaultHeatingThermostatClusterServer(localTemperature, occupiedHeatingSetpoint, minHeatSetpoint, maxHeatSetpoint)

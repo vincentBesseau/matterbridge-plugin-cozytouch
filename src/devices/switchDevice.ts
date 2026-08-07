@@ -5,7 +5,7 @@
  * @license Apache-2.0
  */
 
-import { MatterbridgeEndpoint, onOffOutlet } from 'matterbridge';
+import { MatterbridgeEndpoint, onOffPlugInUnit } from 'matterbridge';
 import { AnsiLogger } from 'matterbridge/logger';
 
 import type { OverkizDeviceInfo } from './types.js';
@@ -20,7 +20,7 @@ import type { OverkizDeviceInfo } from './types.js';
 export function createSwitchEndpoint(device: OverkizDeviceInfo, vendorId: number, log: AnsiLogger): MatterbridgeEndpoint {
   const isOn = device.get('core:OnOffState') === 'on';
 
-  const endpoint = new MatterbridgeEndpoint(onOffOutlet, { id: device.uuid })
+  const endpoint = new MatterbridgeEndpoint(onOffPlugInUnit, { id: device.uuid })
     .createDefaultBridgedDeviceBasicInformationClusterServer(device.label, device.serialNumber, vendorId, device.manufacturer, device.model)
     .createDefaultPowerSourceWiredClusterServer()
     .createDefaultOnOffClusterServer(isOn)
