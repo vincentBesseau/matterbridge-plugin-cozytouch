@@ -7,7 +7,8 @@
  * @license Apache-2.0
  */
 
-import { windowCovering, MatterbridgeEndpoint } from 'matterbridge';
+import { MatterbridgeEndpoint } from 'matterbridge';
+import { coverDevice } from '@matterbridge/core';
 import { AnsiLogger } from 'matterbridge/logger';
 
 import type { OverkizDeviceInfo } from './types.js';
@@ -27,7 +28,7 @@ export function createCoverEndpoint(device: OverkizDeviceInfo, vendorId: number,
   // Convert: Overkiz 0-100 → Matter 0-10000
   const positionPercent100ths = closureState * 100;
 
-  const endpoint = new MatterbridgeEndpoint(windowCovering, { id: device.uuid })
+  const endpoint = new MatterbridgeEndpoint(coverDevice, { id: device.uuid })
     .createDefaultBridgedDeviceBasicInformationClusterServer(device.label, device.serialNumber, vendorId, device.manufacturer, device.model)
     .createDefaultPowerSourceWiredClusterServer()
     .createDefaultWindowCoveringClusterServer(positionPercent100ths)
